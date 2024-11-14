@@ -1,0 +1,1 @@
+jenkins는 docker로

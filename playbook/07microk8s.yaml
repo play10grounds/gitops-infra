@@ -1,0 +1,104 @@
+---
+- name: Install and Configure MicroK8s
+  hosts: gitops2 
+                  #, gitops3, gitops4
+  become: yes
+  vars:
+    hostname: gitops2
+    timezone: Asia/Seoul
+    ip_address: 10.0.2.31/24
+    gateway: 10.0.2.1
+    dns_servers:
+      - 8.8.8.8
+      - 8.8.4.4
+    user: ubuntu
+
+  tasks:
+    - name: Set hostname
+      hostname:
+        name: "{{ hostname }}"
+
+#    - name: Disable swap
+#      command: swapoff -a
+#      changed_when: false
+
+          #    - name: Remove swap from fstab
+          #      replace:
+          #        path: /etc/fstab
+          #        regexp: '^([^#].*?\sswap\s+sw\s+.*)$'
+          #        replace: '# \1'
+
+    - name: Set timezone
+      timezone:
+        name: "{{ timezone }}"
+
+    - name: Synchronize hardware clock
+      command: hwclock
+      changed_when: false
+
+    - name: Disable UFW
+      ufw:
+        state: disabled
+      ignore_errors: yes          
+
+#    - name: Configure network
+#      template:
+#        src: 05netplan.j2
+#        dest: /etc/netplan/00-installer-config.yaml
+#      notify: Apply netplan
+
+    - name: Install MicroK8s
+      snap:
+        name: microk8s
+        classic: yes
+
+    - name: Add user to microk8s group
+      user:
+        name: "{{ user }}"
+        groups: microk8s
+        append: yes
+
+    - name: Create .kube directory
+      file:
+        path: "/home/{{ user }}/.kube"
+        state: directory
+        owner: "{{ user }}"
+        group: "{{ user }}"
+        mode: '0755'
+
+    - name: Change ownership of .kube directory
+      file:
+        path: "/home/{{ user }}/.kube"
+        owner: "{{ user }}"
+        group: "{{ user }}"
+        recurse: yes
+
+    - name: Add PATH to .bashrc
+      lineinfile:
+        path: "/home/{{ user }}/.bashrc"
+        line: "{{ item }}"
+      loop:
+        - 'export PATH=$PATH:/usr/snap/bin'
+        - 'export PATH=$PATH:/snap/bin'
+
+    - name: Add alias for microk8s kubectl
+      lineinfile:
+        path: "/home/{{ user }}/.bashrc"
+        line: "alias mk='microk8s kubectl'"
+
+    - name: Get MicroK8s kubeconfig and save to ~/.kube/config
+      command: microk8s config
+      register: kubeconfig_output
+      
+    - name: Write kubeconfig to file
+      copy:
+        content: "{{ kubeconfig_output.stdout }}"
+        dest: /home/{{ user }}/.kube/config
+        owner: "{{ user }}"
+        group: "{{ user }}"          
+        mode: '0600'  # 파일 권한 설정      
+
+#  handlers:
+#    - name: Apply netplan
+#      command: netplan apply
+
